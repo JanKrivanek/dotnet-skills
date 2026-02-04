@@ -1,0 +1,10 @@
+{
+  "name": "dotnet-skills",
+  "plugins": [
+    {
+      "name": "msbuild-skills",
+      "path": "msbuild-skills",
+      "description": "GitHub Copilot CLI skills for MSBuild development."
+    }
+  ]
+}
