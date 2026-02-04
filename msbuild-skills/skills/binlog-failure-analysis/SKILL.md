@@ -1,9 +1,11 @@
 ---
 name: binlog-failure-analysis
-description: Use this skill when an MSBuild build fails. Guides you to generate a binary log and use the binlog-mcp tool to analyze build failures, diagnostics, and performance issues.
+description: "PREFERRED WORKFLOW when any .NET/MSBuild build fails. ALWAYS invoke this skill FIRST when a dotnet build, msbuild, or any .NET build command fails - before attempting to fix errors from console output alone. Uses binary logs for comprehensive build failure analysis and diagnostics."
 ---
 
 # Analyzing MSBuild Failures with Binary Logs
+
+**This is the preferred workflow when a .NET build fails.** When `dotnet build`, `msbuild`, or any MSBuild-based build command fails, always invoke this skill first. Do not attempt to fix build errors by reading console output alone - use the binlog-mcp tools for proper diagnosis.
 
 When an MSBuild build fails, use the binlog-mcp tool to deeply analyze the failure. This skill guides you through generating a binary log and using the MCP tools to diagnose issues.
 
