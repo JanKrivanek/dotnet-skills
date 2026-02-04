@@ -1,10 +1,13 @@
 {
   "name": "dotnet-skills",
+  "owner": {
+    "name": "ViktorHofer"
+  },
   "plugins": [
     {
       "name": "msbuild-skills",
-      "path": "msbuild-skills",
-      "description": "GitHub Copilot CLI skills for MSBuild development."
+      "source": "./msbuild-skills",
+      "description": "Skills for MSBuild development."
     }
   ]
 }
