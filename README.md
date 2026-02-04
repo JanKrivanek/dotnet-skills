@@ -26,6 +26,9 @@ This repository hosts .NET-specific plugins for [GitHub Copilot CLI](https://doc
 
 4. The plugin's skills will now be available to Copilot in your sessions.
 
+> [!WARNING]
+> **Updating plugins is currently broken.** To update a plugin, you must first uninstall it with `/plugin uninstall <plugin-name>` and then reinstall it. See [github/copilot-cli#1290](https://github.com/github/copilot-cli/issues/1290) for details.
+
 ## Adding New Plugins
 
 To add a new plugin to this repository:
