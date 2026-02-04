@@ -1,1 +1,13 @@
-..//.github/plugin/marketplace.json
+{
+  "name": "dotnet-skills",
+  "owner": {
+    "name": "ViktorHofer"
+  },
+  "plugins": [
+    {
+      "name": "msbuild-skills",
+      "source": "./msbuild-skills",
+      "description": "Skills for MSBuild development."
+    }
+  ]
+}
