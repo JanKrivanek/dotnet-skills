@@ -6,7 +6,7 @@ This repository hosts .NET-specific plugins for [GitHub Copilot CLI](https://doc
 
 | Plugin | Description | Install Command |
 |--------|-------------|-----------------|
-| [msbuild-skills](./msbuild-skills) | Skills for MSBuild development, including multithreaded task migration | `/plugins install <repo-url>/msbuild-skills` |
+| [msbuild-skills](./msbuild-skills) | Skills for MSBuild development, including multithreaded task migration | `/plugin install ViktorHofer/skills:msbuild-skills` |
 
 ## Installation
 
@@ -15,10 +15,12 @@ This repository hosts .NET-specific plugins for [GitHub Copilot CLI](https://doc
    copilot
    ```
 
-2. Install a plugin using the `/plugins install` command:
+2. Install a plugin using the `/plugin install` command:
    ```
-   /plugins install https://github.com/<owner>/skills/msbuild-skills
+   /plugin install ViktorHofer/skills:msbuild-skills
    ```
+
+   For subdirectories, use the `owner/repo:path` format.
 
 3. The plugin's skills will now be available to Copilot in your sessions.
 
@@ -33,7 +35,7 @@ To add a new plugin to this repository:
      "name": "my-plugin",
      "version": "1.0.0",
      "description": "Description of what the plugin does.",
-     "skills": ["skills/my-skill/SKILL.md"]
+     "skills": ["skills/my-skill"]
    }
    ```
 3. Add skills in a `skills/` subdirectory, each with a `SKILL.md` file
