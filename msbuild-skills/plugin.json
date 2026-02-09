@@ -1,6 +1,6 @@
 {
   "name": "msbuild-skills",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "GitHub Copilot CLI skills for MSBuild development.",
   "skills": "./skills/",
   "mcpServers": {

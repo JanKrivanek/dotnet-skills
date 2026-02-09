@@ -13,10 +13,19 @@ This skill helps identify when multiple MSBuild project evaluations share the sa
 - Missing or overwritten output files
 - Intermittent build failures
 - "File in use" errors
+- **NuGet restore errors like `Cannot create a file when that file already exists`** - this strongly indicates multiple projects share the same `IntermediateOutputPath` where `project.assets.json` is written
 
 Clashes can occur between:
 - **Different projects** sharing the same output directory
 - **Multi-targeting builds** (e.g., `TargetFrameworks=net8.0;net9.0`) where the path doesn't include the target framework
+
+## When to Use This Skill
+
+**Invoke this skill immediately when you see:**
+- `Cannot create a file when that file already exists` during NuGet restore
+- `The process cannot access the file because it is being used by another process`
+- Intermittent build failures that succeed on retry
+- Missing output files or unexpected overwriting
 
 ## Step 1: Generate a Binary Log
 
