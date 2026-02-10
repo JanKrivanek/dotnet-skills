@@ -80,6 +80,14 @@ get_evaluation_global_properties with:
 
 Look for properties like `TargetFramework`, `Configuration`, `Platform`, and `RuntimeIdentifier` that should differentiate output paths.
 
+Also check **solution-related properties** to identify multi-solution builds:
+- `SolutionFileName`, `SolutionName`, `SolutionPath`, `SolutionDir`, `SolutionExt` — differ when a project is built from multiple solutions
+- `CurrentSolutionConfigurationContents` — the number of project entries reveals which solution an evaluation belongs to (e.g., 1 project vs ~49 projects)
+
+Look for **extra global properties that don't affect output paths** but create distinct MSBuild project instances:
+- `PublishReadyToRun` — a publish setting that doesn't change `OutputPath` or `IntermediateOutputPath`, but MSBuild treats it as a distinct project instance, preventing result caching and causing redundant target execution (e.g., `CopyFilesToOutputDirectory` running again)
+- Any other global property that differs between evaluations but doesn't contribute to path differentiation
+
 ### Filter Out Non-Build Evaluations
 
 When analyzing clashes, filter evaluations based on the type of clash you're investigating:
@@ -133,6 +141,28 @@ Look for evidence of clashes in the messages:
 - `Did not copy from file "..." to file "..." because the "SkipUnchangedFiles" parameter was set to "true"` - Indicates a second build attempted to write to the same location
 
 The `SkipUnchangedFiles` skip message often masks clashes - the build succeeds but is vulnerable to race conditions in parallel builds.
+
+## Step 9: Check CoreCompile Execution Patterns (Optional)
+
+To understand which project instance did the actual compilation vs redundant work, check `CoreCompile`:
+
+```
+search_binlog with:
+  - binlog_file: "<path>"
+  - query: "$target CoreCompile project(<project-name>.csproj)"
+```
+
+Compare the durations:
+- The instance with a long `CoreCompile` duration (e.g., seconds) is the **primary build** that did the actual compilation
+- Instances where `CoreCompile` was skipped (duration ~0-10ms) are **redundant builds** — they didn't recompile but may still run other targets like `CopyFilesToOutputDirectory` that write to the same output directory
+
+This helps distinguish the "real" build from redundant instances created by extra global properties or multi-solution builds.
+
+### Caveat: `under()` Search in Multi-Solution Builds
+
+When using `search_binlog` with `under($project SolutionName)` to determine which solution a project instance belongs to, be aware that `under()` matches through the **entire build hierarchy**. If both solutions share a common ancestor (e.g., Arcade SDK's `Build.proj`), all project instances will appear "under" both solutions.
+
+Instead, use `get_evaluation_global_properties` and compare the `SolutionFileName` / `CurrentSolutionConfigurationContents` properties to reliably determine which solution an evaluation belongs to.
 
 ### Expected Output Structure
 
@@ -224,14 +254,40 @@ Or simply use the SDK defaults which place `obj` inside each project's directory
 
 ### Multiple solutions building the same project
 
-**Problem:** A single build invokes multiple solutions (e.g., via MSBuild task or command line) that include the same project. Each solution build evaluates and builds the project independently, potentially with different global properties that don't affect the output path.
+**Problem:** A single build invokes multiple solutions (e.g., via MSBuild task or command line) that include the same project. Each solution build evaluates and builds the project independently, with different `Solution*` global properties that don't affect the output path.
 
-**Example:** A repo build script builds `BuildAnalyzers.sln` then `Main.slnx`, and both solutions include `SharedAnalyzers.csproj`. Both builds write to `bin\Release\netstandard2.0\`.
+**How to detect:** Compare `SolutionFileName` and `CurrentSolutionConfigurationContents` across evaluations for the same project. Different values indicate multi-solution builds. For example:
+
+| Property | Eval from Solution A | Eval from Solution B |
+|---|---|---|
+| `SolutionFileName` | `BuildAnalyzers.sln` | `Main.slnx` |
+| `CurrentSolutionConfigurationContents` | 1 project entry | ~49 project entries |
+| `OutputPath` | `bin\Release\netstandard2.0\` | `bin\Release\netstandard2.0\` ← **clash** |
+
+**Example:** A repo build script builds `BuildAnalyzers.sln` then `Main.slnx`, and both solutions include `SharedAnalyzers.csproj`. Both builds write to `bin\Release\netstandard2.0\`. The first build compiles; the second skips compilation but still runs `CopyFilesToOutputDirectory`.
 
 **Fix:** Options include:
 1. **Consolidate solutions** - Ensure each project is only built from one solution in a single build
 2. **Use different configurations** - Build solutions with different `Configuration` values that result in different output paths
 3. **Exclude duplicate projects** - Use solution filters or conditional project inclusion to avoid building the same project twice
+
+### Extra global properties creating redundant project instances
+
+**Problem:** A project is built multiple times within the same solution due to extra global properties (e.g., `PublishReadyToRun=false`) that create distinct MSBuild project instances. These properties don't affect output paths but prevent MSBuild from caching results across instances, causing redundant target execution.
+
+**How to detect:** Compare global properties across evaluations for the same project within the same solution (same `SolutionFileName`). Look for properties that differ but don't contribute to path differentiation:
+
+| Property | Eval A (from Razor.slnx) | Eval B (from Razor.slnx) |
+|---|---|---|
+| `PublishReadyToRun` | *(not set)* | `false` |
+| `OutputPath` | `bin\Release\netstandard2.0\` | `bin\Release\netstandard2.0\` ← **clash** |
+
+This is particularly wasteful for projects where the extra property has no effect (e.g., `PublishReadyToRun` on a `netstandard2.0` class library that doesn't use ReadyToRun compilation).
+
+**Fix:** Options include:
+1. **Remove the extra global property** - Investigate which parent target/task is injecting the property and prevent it from being passed to projects that don't need it
+2. **Use `RemoveGlobalProperties` metadata** - On `ProjectReference` items, use `RemoveGlobalProperties="PublishReadyToRun"` to strip the property before building the referenced project
+3. **Condition the property** - Only set the property on projects that actually use it (e.g., only for executable projects, not class libraries)
 
 ## Example Workflow
 
@@ -279,9 +335,14 @@ When multiple evaluations share an output path, compare these global properties 
 | `RuntimeIdentifier` | Yes | Different RIDs should have different paths |
 | `Configuration` | Yes | Debug vs Release |
 | `Platform` | Yes | AnyCPU vs x64 etc. |
+| `SolutionFileName` | No | Identifies which solution built the project — different values indicate multi-solution clash |
+| `SolutionName` | No | Solution name without extension |
+| `SolutionPath` | No | Full path to the solution file |
+| `SolutionDir` | No | Directory containing the solution file |
+| `CurrentSolutionConfigurationContents` | No | XML with project entries — count of entries reveals which solution |
 | `BuildProjectReferences` | No | `false` = P2P query, not a real build - ignore these |
 | `MSBuildRestoreSessionId` | No | Present = restore phase evaluation |
-| `PublishReadyToRun` | No | Publish setting, doesn't change build output path |
+| `PublishReadyToRun` | No | Publish setting, doesn't change build output path but creates distinct project instances |
 
 ## Testing Fixes
 
