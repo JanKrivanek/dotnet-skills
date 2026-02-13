@@ -1,0 +1,282 @@
+<#
+.SYNOPSIS
+    Runs a single evaluation scenario against Copilot CLI.
+
+.DESCRIPTION
+    Executes Copilot CLI in programmatic mode against a scenario folder,
+    captures output and stats, and saves results to the results directory.
+
+.PARAMETER ScenarioName
+    Name of the scenario folder under evaluation/scenarios/.
+
+.PARAMETER RunType
+    Either "vanilla" (no plugins) or "skilled" (with msbuild-skills plugin).
+
+.PARAMETER ResultsDir
+    Path to the results directory for this run.
+
+.PARAMETER TimeoutSeconds
+    Maximum time to wait for Copilot CLI to complete (default: 300).
+
+.PARAMETER RepoRoot
+    Root directory of the repository. Defaults to two levels up from this script.
+#>
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)]
+    [string]$ScenarioName,
+
+    [Parameter(Mandatory)]
+    [ValidateSet("vanilla", "skilled")]
+    [string]$RunType,
+
+    [Parameter(Mandatory)]
+    [string]$ResultsDir,
+
+    [int]$TimeoutSeconds = 300,
+
+    [string]$RepoRoot
+)
+
+$ErrorActionPreference = "Stop"
+
+# Resolve repo root
+if (-not $RepoRoot) {
+    $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\")).Path
+}
+
+# Import helper functions
+. (Join-Path $PSScriptRoot "parse-copilot-stats.ps1")
+
+#region Helper Functions
+
+function Assert-PluginState {
+    param(
+        [string]$PluginName,
+        [bool]$ShouldBeInstalled
+    )
+
+    $output = & copilot plugin list 2>&1 | Out-String
+    $isInstalled = $output -match $PluginName
+
+    if ($ShouldBeInstalled -and -not $isInstalled) {
+        throw "[FAIL] VALIDATION FAILED: Plugin '$PluginName' should be installed but is NOT. Output: $output"
+    }
+    if (-not $ShouldBeInstalled -and $isInstalled) {
+        throw "[FAIL] VALIDATION FAILED: Plugin '$PluginName' should NOT be installed but IS. Output: $output"
+    }
+
+    Write-Host "[OK] Plugin state validated: '$PluginName' installed=$isInstalled (expected=$ShouldBeInstalled)"
+}
+
+function Clean-ScenarioFolder {
+    param([string]$ScenarioPath)
+
+    Write-Host "[CLEAN] Cleaning scenario folder: $ScenarioPath"
+
+    # Remove build artifacts
+    Get-ChildItem -Path $ScenarioPath -Recurse -Directory -Include 'bin', 'obj' -ErrorAction SilentlyContinue |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+    # Remove any previous copilot outputs
+    Get-ChildItem -Path $ScenarioPath -Recurse -File -Include '*.copilot.*', 'copilot-session-*' -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+
+    # Remove SharedObj and SharedOutput contents (from bin-obj-clash scenario)
+    @('SharedObj', 'SharedOutput') | ForEach-Object {
+        $path = Join-Path $ScenarioPath $_
+        if (Test-Path $path) {
+            Get-ChildItem -Path $path -Recurse -ErrorAction SilentlyContinue |
+                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    Write-Host "[OK] Scenario folder cleaned"
+}
+
+function Invoke-CopilotWithTimeout {
+    param(
+        [string]$Prompt,
+        [string]$WorkingDir,
+        [string]$OutputFile,
+        [int]$TimeoutSeconds = 300
+    )
+
+    Write-Host "[RUN] Running Copilot CLI..."
+    Write-Host "   Working directory: $WorkingDir"
+    Write-Host "   Timeout: ${TimeoutSeconds}s"
+    Write-Host "   Prompt: $Prompt"
+
+    $errorFile = "${OutputFile}.err"
+
+    # Resolve copilot executable - prefer .cmd/.bat/.exe for Process.Start compatibility
+    $copilotCmd = Get-Command copilot -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandType -eq 'Application' } |
+        Select-Object -First 1 -ExpandProperty Source
+    if (-not $copilotCmd) {
+        if ($env:OS -match 'Windows') {
+            # Windows: use cmd.exe to run copilot (works with .ps1 shims via PATH)
+            $copilotCmd = "cmd.exe"
+            $copilotArgs = "/c copilot -p `"$Prompt`" --allow-all-tools --allow-all-paths --no-ask-user"
+        } else {
+            # Linux/macOS: use /usr/bin/env to find copilot
+            $copilotCmd = "/usr/bin/env"
+            $copilotArgs = "copilot -p `"$Prompt`" --allow-all-tools --allow-all-paths --no-ask-user"
+        }
+    } else {
+        $copilotArgs = "-p `"$Prompt`" --allow-all-tools --allow-all-paths --no-ask-user"
+    }
+
+    Write-Host "   Copilot executable: $copilotCmd"
+
+    $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $processInfo.FileName = $copilotCmd
+    $processInfo.Arguments = $copilotArgs
+    $processInfo.WorkingDirectory = $WorkingDir
+    $processInfo.RedirectStandardOutput = $true
+    $processInfo.RedirectStandardError = $true
+    $processInfo.UseShellExecute = $false
+    $processInfo.CreateNoWindow = $true
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $processInfo
+
+    # Capture output asynchronously to avoid deadlocks
+    $stdoutBuilder = New-Object System.Text.StringBuilder
+    $stderrBuilder = New-Object System.Text.StringBuilder
+
+    $stdoutEvent = Register-ObjectEvent -InputObject $process -EventName OutputDataReceived -Action {
+        if ($null -ne $EventArgs.Data) {
+            $Event.MessageData.AppendLine($EventArgs.Data) | Out-Null
+        }
+    } -MessageData $stdoutBuilder
+
+    $stderrEvent = Register-ObjectEvent -InputObject $process -EventName ErrorDataReceived -Action {
+        if ($null -ne $EventArgs.Data) {
+            $Event.MessageData.AppendLine($EventArgs.Data) | Out-Null
+        }
+    } -MessageData $stderrBuilder
+
+    $startTime = Get-Date
+    $process.Start() | Out-Null
+    $process.BeginOutputReadLine()
+    $process.BeginErrorReadLine()
+
+    $completed = $process.WaitForExit($TimeoutSeconds * 1000)
+    $elapsed = (Get-Date) - $startTime
+
+    # Unregister events
+    Unregister-Event -SourceIdentifier $stdoutEvent.Name -ErrorAction SilentlyContinue
+    Unregister-Event -SourceIdentifier $stderrEvent.Name -ErrorAction SilentlyContinue
+
+    # Small delay to ensure async output is flushed
+    Start-Sleep -Milliseconds 500
+
+    $stdout = $stdoutBuilder.ToString()
+    $stderr = $stderrBuilder.ToString()
+
+    # Save outputs
+    $stdout | Out-File -FilePath $OutputFile -Encoding utf8
+    if ($stderr) {
+        $stderr | Out-File -FilePath $errorFile -Encoding utf8
+    }
+
+    if (-not $completed) {
+        $process.Kill()
+        throw "[TIMEOUT] Copilot timed out after $TimeoutSeconds seconds"
+    }
+
+    $exitCode = $process.ExitCode
+    Write-Host "   Exit code: $exitCode"
+    Write-Host "   Elapsed: $([math]::Round($elapsed.TotalSeconds, 1))s"
+
+    if ($exitCode -ne 0) {
+        Write-Warning "Copilot CLI exited with code $exitCode"
+        Write-Warning "Stderr: $stderr"
+        # Don't throw - we still want to capture and evaluate partial output
+    }
+
+    # Return combined output (stats are written to stderr by Copilot CLI)
+    return ($stdout + "`n" + $stderr)
+}
+
+#endregion
+
+#region Main Logic
+
+Write-Host ""
+Write-Host ("=" * 60)
+Write-Host "[SCENARIO] Running: $ScenarioName ($RunType)"
+Write-Host ("=" * 60)
+
+$scenarioDir = Join-Path $RepoRoot "evaluation\scenarios\$ScenarioName"
+$scenarioResultsDir = Join-Path $ResultsDir $ScenarioName
+
+if (-not (Test-Path $scenarioDir)) {
+    throw "Scenario directory not found: $scenarioDir"
+}
+
+# Create results directory
+New-Item -ItemType Directory -Force -Path $scenarioResultsDir | Out-Null
+
+# Step 1: Clean the scenario folder
+Clean-ScenarioFolder -ScenarioPath $scenarioDir
+
+# Step 2: Configure plugin state
+$pluginName = "msbuild-skills"
+$pluginPath = Join-Path $RepoRoot "msbuild-skills"
+
+if ($RunType -eq "vanilla") {
+    Write-Host ""
+    Write-Host "[PLUGIN] Uninstalling plugin for vanilla run..."
+    $prevPref = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    & copilot plugin uninstall $pluginName 2>&1 | Out-Null
+    $ErrorActionPreference = $prevPref
+    # Swallow error if not installed - that's the desired state
+    Assert-PluginState -PluginName $pluginName -ShouldBeInstalled $false
+} elseif ($RunType -eq "skilled") {
+    Write-Host ""
+    Write-Host "[PLUGIN] Installing plugin for skilled run..."
+    & copilot plugin install $pluginPath 2>&1 | Write-Host
+    Assert-PluginState -PluginName $pluginName -ShouldBeInstalled $true
+}
+
+# Step 3: Build the prompt
+$prompt = "Analyze the build configuration in this directory and identify any output path clashes or build configuration issues. Look at the .csproj files and solution file. Identify problems that would cause build failures, especially related to shared output paths, intermediate output paths, and multi-targeting configurations. Explain each issue you find and suggest a solution."
+
+# Step 4: Run Copilot CLI
+$outputFile = Join-Path $scenarioResultsDir "${RunType}-output.txt"
+
+$output = Invoke-CopilotWithTimeout `
+    -Prompt $prompt `
+    -WorkingDir $scenarioDir `
+    -OutputFile $outputFile `
+    -TimeoutSeconds $TimeoutSeconds
+
+# Step 5: Parse stats
+Write-Host ""
+Write-Host "[STATS] Parsing stats..."
+$stats = Parse-CopilotStats -Output $output
+
+# Add metadata
+$stats.RunType = $RunType
+$stats.ScenarioName = $ScenarioName
+$stats.Timestamp = (Get-Date -Format "o")
+
+$statsFile = Join-Path $scenarioResultsDir "${RunType}-stats.json"
+$stats | ConvertTo-Json -Depth 5 | Out-File -FilePath $statsFile -Encoding utf8
+
+Write-Host "   Premium Requests: $($stats.PremiumRequests)"
+Write-Host "   API Time: $($stats.ApiTimeSeconds)s"
+Write-Host "   Total Time: $($stats.TotalTimeSeconds)s"
+Write-Host "   Model: $($stats.Model)"
+Write-Host "   Tokens In: $($stats.TokensIn)"
+Write-Host "   Tokens Out: $($stats.TokensOut)"
+
+Write-Host ""
+Write-Host "[OK] Scenario $ScenarioName ($RunType) completed"
+Write-Host "   Output: $outputFile"
+Write-Host "   Stats: $statsFile"
+
+#endregion
