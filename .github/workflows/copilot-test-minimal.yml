@@ -1,11 +1,11 @@
 name: Copilot CLI Minimal Test
 
 on:
-  pull_request:
-    paths:
-      - 'msbuild-skills/**'
-      - 'evaluation/**'
-      - '.github/workflows/copilot-test-minimal.yml'
+ # pull_request:
+ #   paths:
+ #     - 'msbuild-skills/**'
+ #     - 'evaluation/**'
+ #     - '.github/workflows/copilot-test-minimal.yml'
   workflow_dispatch:
     inputs:
       prompt:
