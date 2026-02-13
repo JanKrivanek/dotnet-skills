@@ -146,7 +146,8 @@ jobs:
         if: always()
         run: |
           pwsh -File ./evaluation/scripts/generate-summary.ps1 `
-            -ResultsDir "evaluation/results/$env:RUN_ID"
+            -ResultsDir "evaluation/results/$env:RUN_ID" `
+            -GitHubRunUrl "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           # Add to job summary
           Get-Content "evaluation/results/$env:RUN_ID/summary.md" >> $env:GITHUB_STEP_SUMMARY
