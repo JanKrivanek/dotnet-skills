@@ -13,6 +13,11 @@
       "name": "polygot-test-agent",
       "source": "./polygot-test-agent",
       "description": "Generates comprehensive unit tests for any programming language using a multi-agent pipeline."
+    },
+    {
+      "name": "unittest",
+      "source": "./unittest",
+      "description": "Provides guidance for generating comprehensive C# unit tests in .NET projects using MSTest, NUnit, or xUnit frameworks."
     }
   ]
 }
