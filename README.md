@@ -8,6 +8,7 @@ This repository hosts .NET-specific plugins for [GitHub Copilot CLI](https://doc
 |--------|-------------|
 | [msbuild-skills](./msbuild-skills) | Skills for MSBuild development, including multithreaded task migration and binlog analysis |
 | [polygot-test-agent](./polygot-test-agent) | Generates comprehensive unit tests for any programming language using a multi-agent pipeline |
+| [unittest](./unittest) | Provides guidance for generating comprehensive C# unit tests in .NET projects using MSTest, NUnit, or xUnit frameworks |
 
 ## Installation
 
@@ -38,6 +39,10 @@ _The following instructions are written for GitHub Copilot CLI but work with Cla
      ```
      /plugin install polygot-test-agent@dotnet-skills
      ```
+   - **unittest** — .NET unit test generation guidance:
+     ```
+     /plugin install unittest@dotnet-skills
+     ```
 
 5. Browse the available plugins:
    ```
@@ -57,6 +62,7 @@ To update plugins from the marketplace and get the latest version:
 ```
 /plugin update msbuild-skills@dotnet-skills
 /plugin update polygot-test-agent@dotnet-skills
+/plugin update unittest@dotnet-skills
 ```
 
 ## Adding New Plugins
