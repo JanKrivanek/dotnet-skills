@@ -142,12 +142,22 @@ jobs:
           }
         shell: pwsh
 
+      - name: Upload Artifacts
+        id: upload-artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-results-${{ env.RUN_ID }}
+          path: evaluation/results/${{ env.RUN_ID }}/
+          retention-days: 30
+
       - name: Generate Summary
         if: always()
         run: |
           pwsh -File ./evaluation/scripts/generate-summary.ps1 `
             -ResultsDir "evaluation/results/$env:RUN_ID" `
-            -GitHubRunUrl "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            -GitHubRunUrl "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" `
+            -ArtifactsUrl "${{ steps.upload-artifacts.outputs.artifact-url }}"
 
           # Add to job summary
           Get-Content "evaluation/results/$env:RUN_ID/summary.md" >> $env:GITHUB_STEP_SUMMARY
@@ -160,11 +170,3 @@ jobs:
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: evaluation/results/${{ env.RUN_ID }}/summary.md
-
-      - name: Upload Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: evaluation-results-${{ env.RUN_ID }}
-          path: evaluation/results/${{ env.RUN_ID }}/
-          retention-days: 30
