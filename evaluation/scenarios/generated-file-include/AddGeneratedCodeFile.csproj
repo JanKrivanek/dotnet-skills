@@ -55,7 +55,7 @@ System.IO.File.WriteAllText(FilePath, code);
     <WriteCodeFile
       FilePath="$(_GeneratedFilePath)"
       BuildTime="$(_BuildTime)"
-      MachineName="$(COMPUTERNAME)"
+      MachineName="$([System.Environment]::MachineName)"
       ProjectName="$(MSBuildProjectName)"
       Configuration="$(Configuration)"
       TargetFramework="$(TargetFramework)" />

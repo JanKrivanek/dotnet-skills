@@ -60,13 +60,13 @@ function Invoke-EvaluationCopilot {
         if (-not $copilotCmd) {
             if ($env:OS -match 'Windows') {
                 $copilotCmd = "cmd.exe"
-                $copilotArgs = "/c copilot -p `"$Prompt`" --no-ask-user --allow-all-tools --allow-all-paths"
+                $copilotArgs = "/c copilot -p `"$Prompt`" --model claude-opus-4.6 --no-ask-user --allow-all-tools --allow-all-paths"
             } else {
                 $copilotCmd = "/usr/bin/env"
-                $copilotArgs = "copilot -p `"$Prompt`" --no-ask-user --allow-all-tools --allow-all-paths"
+                $copilotArgs = "copilot -p `"$Prompt`" --model claude-opus-4.6 --no-ask-user --allow-all-tools --allow-all-paths"
             }
     } else {
-        $copilotArgs = "-p `"$Prompt`" --no-ask-user --allow-all-tools --allow-all-paths"
+        $copilotArgs = "-p `"$Prompt`" --model claude-opus-4.6 --no-ask-user --allow-all-tools --allow-all-paths"
     }
 
     Write-Host "   Copilot executable: $copilotCmd"

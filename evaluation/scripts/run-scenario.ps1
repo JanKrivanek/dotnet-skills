@@ -131,14 +131,14 @@ function Invoke-CopilotWithTimeout {
         if ($env:OS -match 'Windows') {
             # Windows: use cmd.exe to run copilot (works with .ps1 shims via PATH)
             $copilotCmd = "cmd.exe"
-            $copilotArgs = "/c copilot -p `"$Prompt`" --allow-all-tools --allow-all-paths --no-ask-user"
+            $copilotArgs = "/c copilot -p `"$Prompt`" --model claude-opus-4.6 --allow-all-tools --allow-all-paths --no-ask-user"
         } else {
             # Linux/macOS: use /usr/bin/env to find copilot
             $copilotCmd = "/usr/bin/env"
-            $copilotArgs = "copilot -p `"$Prompt`" --allow-all-tools --allow-all-paths --no-ask-user"
+            $copilotArgs = "copilot -p `"$Prompt`" --model claude-opus-4.6 --allow-all-tools --allow-all-paths --no-ask-user"
         }
     } else {
-        $copilotArgs = "-p `"$Prompt`" --allow-all-tools --allow-all-paths --no-ask-user"
+        $copilotArgs = "-p `"$Prompt`" --model claude-opus-4.6 --allow-all-tools --allow-all-paths --no-ask-user"
     }
 
     Write-Host "   Copilot executable: $copilotCmd"
