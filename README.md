@@ -26,22 +26,22 @@ _The following instructions are written for GitHub Copilot CLI but work with Cla
 
 3. Browse available plugins in the marketplace:
    ```
-   /plugin marketplace browse dotnet-skills
+   /plugin marketplace browse dotnet-skills-jk
    ```
 
 4. Install the plugin(s) you need:
 
    - **msbuild-skills** — MSBuild development skills:
      ```
-     /plugin install msbuild-skills@dotnet-skills
+     /plugin install msbuild-skills@dotnet-skills-jk
      ```
    - **polygot-test-agent** — Polyglot test generation agent:
      ```
-     /plugin install polygot-test-agent@dotnet-skills
+     /plugin install polygot-test-agent@dotnet-skills-jk
      ```
    - **unittest** — .NET unit test generation guidance:
      ```
-     /plugin install unittest@dotnet-skills
+     /plugin install unittest@dotnet-skills-jk
      ```
 
 5. Browse the available plugins:
@@ -60,9 +60,9 @@ _The following instructions are written for GitHub Copilot CLI but work with Cla
 To update plugins from the marketplace and get the latest version:
 
 ```
-/plugin update msbuild-skills@dotnet-skills
-/plugin update polygot-test-agent@dotnet-skills
-/plugin update unittest@dotnet-skills
+/plugin update msbuild-skills@dotnet-skills-jk
+/plugin update polygot-test-agent@dotnet-skills-jk
+/plugin update unittest@dotnet-skills-jk
 ```
 
 ## Adding New Plugins
