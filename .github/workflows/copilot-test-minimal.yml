@@ -19,8 +19,7 @@ env:
   GH_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
 
 jobs:
-  # Linux job - works with act locally
-  test-copilot-linux:
+  test-copilot:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     
@@ -95,6 +94,7 @@ jobs:
       - name: Comment on PR
         if: github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@v4
+        continue-on-error: true  # May fail in local act runs (no GitHub API)
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: pr-comment.md
@@ -103,68 +103,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: copilot-output-linux
+          name: copilot-output
           path: |
             copilot-output.txt
             pr-comment.md
-          retention-days: 7
-
-  # Windows job - primary target for MSBuild scenarios
-  test-copilot-windows:
-    runs-on: windows-latest
-    timeout-minutes: 10
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Copilot CLI
-        run: |
-          npm install -g @github/copilot
-          copilot --version
-        shell: pwsh
-
-      - name: Test Copilot CLI
-        id: copilot-test
-        run: |
-          Write-Host "Testing Copilot CLI with prompt: ${{ github.event.inputs.prompt || 'What is 2 + 2? Answer with just the number.' }}"
-          
-          $prompt = "${{ github.event.inputs.prompt || 'What is 2 + 2? Answer with just the number.' }}"
-          
-          # Run copilot in programmatic mode
-          $output = copilot -p $prompt --no-ask-user 2>&1
-          $exitCode = $LASTEXITCODE
-          
-          Write-Host "=== Copilot Output ==="
-          Write-Host $output
-          Write-Host "=== End Output ==="
-          Write-Host "Exit Code: $exitCode"
-          
-          # Save output to file
-          $output | Out-File -FilePath "copilot-output.txt" -Encoding utf8
-          
-          # Check for success
-          if ($exitCode -ne 0) {
-            Write-Host "::error::Copilot CLI failed with exit code $exitCode"
-            exit 1
-          }
-        shell: pwsh
-
-      - name: Display Results
-        run: |
-          Write-Host "=== Final Results ==="
-          Get-Content "copilot-output.txt"
-        shell: pwsh
-
-      - name: Upload Output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: copilot-output-windows
-          path: copilot-output.txt
           retention-days: 7

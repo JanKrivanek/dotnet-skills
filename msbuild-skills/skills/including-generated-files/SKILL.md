@@ -1,6 +1,6 @@
 ---
 name: msbuild-including-generated-files
-description: "Explains how to include files generated during the build into MSBuild's build process. Use when generated files are missing from output, not being compiled, or globs don't capture runtime-generated content."
+description: "Proper handling of files generated during the MSBuild's build process."
 ---
 
 # Including Generated Files Into Your Build
@@ -13,6 +13,19 @@ Files generated during the build are generally ignored by the build process. Thi
 - Globs not capturing files created during the build
 
 This happens because of how MSBuild's build phases work.
+
+## Quick Takeaway
+
+For code files generated during the build - we need to add those to `Compile` and `FileWrites` item groups within the target generating the file(s):
+
+```xml
+  <ItemGroup>
+    <Compile Include="$(GeneratedFilePath)" />
+    <FileWrites Include="$(GeneratedFilePath)" />
+  </ItemGroup>
+```
+
+The target generating the file(s) should be hooked before CoreCompile and BeforeCompile targets - `BeforeTargets="CoreCompile;BeforeCompile"`
 
 ## Why Generated Files Are Ignored
 
@@ -30,50 +43,74 @@ MSBuild runs Targets & Tasks with the provided Properties & Items to perform the
 
 ## Solution: Manually Add Generated Files
 
-When files are generated, manually add them into the build process. The recommended approach is adding the new file to the `Content` or `None` items before the `BeforeBuild` target.
+When files are generated during the build, manually add them into the build process. The approach depends on the type of file being generated.
 
-### Basic Pattern
+### Use `$(IntermediateOutputPath)` for Generated File Location
+
+Always use `$(IntermediateOutputPath)` as the base directory for generated files. **Do not** hardcode `obj\` or construct the intermediary path manually (e.g., `obj\$(Configuration)\$(TargetFramework)\`). The intermediate output path can be redirected to a different location in some build configurations (e.g., shared output directories, CI environments). Using `$(IntermediateOutputPath)` ensures your target works correctly regardless of the actual path.
+
+### Always Add Generated Files to `FileWrites`
+
+Every generated file should be added to the `FileWrites` item group. This ensures that MSBuild's `Clean` target properly removes your generated files. Without this, generated files will accumulate as stale artifacts across builds.
+
+```xml
+<ItemGroup>
+  <FileWrites Include="$(IntermediateOutputPath)my-generated-file.xyz" />
+</ItemGroup>
+```
+
+### Basic Pattern (Non-Code Files)
+
+For generated files that need to be copied to output (config files, data files, etc.), add them to `Content` or `None` items before `BeforeBuild`:
 
 ```xml
 <Target Name="IncludeGeneratedFiles" BeforeTargets="BeforeBuild">
   
   <!-- Your logic that generates files goes here -->
-  <!-- Recommendation: Generate files into $(IntermediateOutputPath) -->
 
   <ItemGroup>
-    <!-- If your generated file was placed in obj\ -->
     <None Include="$(IntermediateOutputPath)my-generated-file.xyz" CopyToOutputDirectory="PreserveNewest"/>
     
-    <!-- If you know exactly where the file will be -->
-    <None Include="some\specific\path\my-generated-file.xyz" CopyToOutputDirectory="PreserveNewest"/>
-    
     <!-- Capture all files of a certain type with a glob -->
-    <None Include="some\specific\path\*.xyz" CopyToOutputDirectory="PreserveNewest"/>
-    <None Include="some\specific\path\*.*" CopyToOutputDirectory="PreserveNewest"/>
+    <None Include="$(IntermediateOutputPath)generated\*.xyz" CopyToOutputDirectory="PreserveNewest"/>
+
+    <!-- Register generated files for proper cleanup -->
+    <FileWrites Include="$(IntermediateOutputPath)my-generated-file.xyz" />
   </ItemGroup>
 </Target>
 ```
 
-### For Generated Source Files
+### For Generated Source Files (Code That Needs Compilation)
 
-If you're generating `.cs` files that need to be compiled:
+If you're generating `.cs` files that need to be compiled, use **`BeforeTargets="CoreCompile;BeforeCompile"`**. This is the correct timing for adding `Compile` items — it runs late enough that the file generation has occurred, but before the compiler runs. Using `BeforeBuild` is too early for some scenarios and may not work reliably with all SDK features.
 
 ```xml
-<Target Name="IncludeGeneratedSourceFiles" BeforeTargets="BeforeBuild">
-  <!-- Generate source files here -->
-  
+<Target Name="IncludeGeneratedSourceFiles" BeforeTargets="CoreCompile;BeforeCompile">
+  <PropertyGroup>
+    <GeneratedCodeDir>$(IntermediateOutputPath)Generated\</GeneratedCodeDir>
+    <GeneratedFilePath>$(GeneratedCodeDir)MyGeneratedFile.cs</GeneratedFilePath>
+  </PropertyGroup>
+
+  <MakeDir Directories="$(GeneratedCodeDir)" />
+
+  <!-- Your logic that generates the .cs file goes here -->
+
   <ItemGroup>
-    <Compile Include="$(IntermediateOutputPath)Generated\*.cs" />
+    <Compile Include="$(GeneratedFilePath)" />
+    <FileWrites Include="$(GeneratedFilePath)" />
   </ItemGroup>
 </Target>
 ```
+
+Note: Specifying both `CoreCompile` and `BeforeCompile` ensures the target runs before whichever target comes first, providing robust ordering regardless of customizations in the build.
 
 ## Target Timing
 
-Adding your generated file to `None` or `Content` is sufficient for the build process to see it and copy the files to the output directory. Ensure it gets added at the right time:
+Choose the `BeforeTargets` value based on the type of file being generated:
 
-- **`BeforeTargets="BeforeBuild"`** - Recommended, runs early enough for most scenarios
-- **`BeforeTargets="AssignTargetPaths"`** - The "final stop" before `None` and `Content` items (among others) are transformed into new items
+- **`BeforeTargets="BeforeBuild"`** — For non-code files added to `None` or `Content`. Runs early enough for copy-to-output scenarios.
+- **`BeforeTargets="CoreCompile;BeforeCompile"`** — For generated source files added to `Compile`. Ensures the file is included before the compiler runs.
+- **`BeforeTargets="AssignTargetPaths"`** — The "final stop" before `None` and `Content` items (among others) are transformed into new items. Use as a fallback if `BeforeBuild` is too early.
 
 ## Globbing Behavior
 

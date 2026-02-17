@@ -432,38 +432,129 @@ Respond with ONLY a JSON object:
 
 ---
 
-## 4. Local Testing with `act`
+## 4. Local Testing
 
-### Prerequisites
+There are **two ways** to test locally:
+
+1. **`act`** — Runs the full GitHub Actions workflow in a Docker container (identical to CI)
+2. **Direct execution** — Run Copilot CLI commands directly in your terminal (quick iteration)
+
+### 4.1 Prerequisites
+
 ```powershell
-# Install act
+# 1. Install act (local GitHub Actions runner)
 winget install nektos.act
-# Or via chocolatey
-choco install act-cli
+
+# 2. Docker Desktop must be running (act uses Docker)
+docker info
+
+# 3. Copilot CLI must be installed and authenticated
+npm install -g @github/copilot
+copilot --version
+
+# 4. GitHub CLI auth (Copilot CLI uses this for authentication)
+gh auth status
 ```
 
-### Running Locally
+### 4.2 Running the Smoke Test Pipeline with `act`
+
+The minimal smoke test workflow (`copilot-test-minimal.yml`) verifies Copilot CLI works end-to-end.
+
+#### Step 1: Create a `.secrets` file
+
+The `.secrets` file is already in `.gitignore`. Create it in the repo root with the GH token:
+
 ```powershell
-# Set up secrets file (.secrets)
-echo "COPILOT_GITHUB_TOKEN=your_token_here" > .secrets
+# Auto-populate from your existing gh auth:
+$token = gh auth token
+"COPILOT_GITHUB_TOKEN=$token" | Out-File -FilePath .secrets -Encoding ascii -NoNewline
+```
 
-# Run the workflow
-act -j evaluate --secret-file .secrets
+#### Step 2: Dry-run to verify setup
 
-# Run with specific event
-act pull_request --secret-file .secrets
-
-# Dry run (show what would happen)
+```powershell
 act -n
 ```
 
-### Local Environment Variables
+You should see all steps listed as `*DRYRUN* ... Success`.
+
+#### Step 3: Run the pipeline
+
 ```powershell
-# For direct script testing
-$env:COPILOT_GITHUB_TOKEN = "your_copilot_token"
-$env:GH_TOKEN = $env:COPILOT_GITHUB_TOKEN  # Copilot CLI reads this
-$env:GITHUB_TOKEN = "your_github_token"    # For GitHub API operations (optional locally)
+# Full run with local artifact storage:
+act workflow_dispatch --secret-file .secrets --artifact-server-path .act-artifacts
 ```
+
+The `--artifact-server-path` flag starts a local artifact server so `actions/upload-artifact` works.
+The `.act-artifacts/` directory is already in `.gitignore`.
+
+**Expected result**: All steps succeed and the job reports **"Job succeeded"**.
+Artifacts (copilot output, PR comment preview) are saved to `.act-artifacts/`.
+
+> **Note**: `act` writes info-level messages to stderr, which PowerShell treats as errors and shows exit code 1. This is cosmetic — check the last line of output for `Job succeeded`.
+
+#### Step 4: Verify the output
+
+You should see output like:
+```
+Testing Copilot CLI with prompt: What is 2 + 2? Answer with just the number.
+4
+
+Total usage est:        1 Premium request
+API time spent:         3s
+Total session time:     7s
+```
+
+### 4.3 Known `act` Limitations
+
+| Limitation | Impact | Workaround |
+|-----------|--------|------------|
+| No GitHub API access | PR comments don't post | Step uses `continue-on-error`; only posts on actual GitHub |
+| `act` stderr in PowerShell | Exit code shows as 1 | Check log for `Job succeeded` |
+| `$GITHUB_STEP_SUMMARY` | Job summary not rendered | View the raw markdown in the log output |
+
+### 4.4 Running the Evaluation Pipeline with `act`
+
+When the full evaluation pipeline (`copilot-skills-evaluation.yml`) is implemented:
+
+```powershell
+# Run the full evaluation
+act workflow_dispatch -j evaluate --secret-file .secrets --artifact-server-path .act-artifacts
+
+# Run with specific scenarios
+act workflow_dispatch -j evaluate --secret-file .secrets --artifact-server-path .act-artifacts `
+  --input scenarios="bin-obj-clash"
+```
+
+### 4.5 Direct Execution (Without `act`)
+
+For quick iteration, run Copilot CLI directly in your terminal:
+
+```powershell
+# Set up auth (Copilot CLI reads GH_TOKEN)
+$env:GH_TOKEN = $(gh auth token)
+
+# Simple smoke test
+copilot -p "What is 2 + 2? Answer with just the number." --no-ask-user
+
+# Test with a skill-relevant prompt (from the repo root)
+copilot -p "Analyze the build configuration in msbuild-skills/skills/check-bin-obj-clash/samples/ and identify any output path clashes" `
+  --no-ask-user --allow-all-tools --allow-all-paths
+
+# Test plugin management
+copilot plugin list
+copilot plugin install ./msbuild-skills
+copilot plugin list
+copilot plugin uninstall msbuild-skills --force
+```
+
+### 4.6 Environment Variables Reference
+
+| Variable | Purpose | Where Used |
+|----------|---------|------------|
+| `GH_TOKEN` | Copilot CLI authentication | Set automatically by workflow from `COPILOT_GITHUB_TOKEN` secret |
+| `COPILOT_GITHUB_TOKEN` | GitHub secret holding the PAT | `.secrets` file for act / GitHub repo settings |
+| `GITHUB_TOKEN` | GitHub API (PR comments, etc.) | Auto-provided by GitHub Actions; not needed locally |
 
 ---
 
@@ -510,7 +601,7 @@ env:
 
 jobs:
   evaluate:
-    runs-on: windows-latest  # Windows for MSBuild scenarios
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     
     steps:
