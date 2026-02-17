@@ -36,6 +36,14 @@ param(
     [Parameter(Mandatory)]
     [string]$ResultsDir,
 
+    [Parameter(Mandatory)]
+    [string]$PluginName,
+
+    [Parameter(Mandatory)]
+    [string]$PluginPath,
+
+    [string]$ScenariosBaseDir,
+
     [int]$TimeoutSeconds = 300,
 
     [string]$RepoRoot
@@ -46,6 +54,11 @@ $ErrorActionPreference = "Stop"
 # Resolve repo root
 if (-not $RepoRoot) {
     $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\")).Path
+}
+
+# Default ScenariosBaseDir
+if (-not $ScenariosBaseDir) {
+    $ScenariosBaseDir = Join-Path $RepoRoot "evaluation\scenarios\$PluginName"
 }
 
 # Import helper functions
@@ -206,7 +219,7 @@ Write-Host ("=" * 60)
 Write-Host "[SCENARIO] Running: $ScenarioName ($RunType)"
 Write-Host ("=" * 60)
 
-$scenarioBaseDir = Join-Path $RepoRoot "evaluation\scenarios\$ScenarioName"
+$scenarioBaseDir = Join-Path $ScenariosBaseDir $ScenarioName
 $scenarioSourceDir = Join-Path $scenarioBaseDir "scenario"
 $scenarioResultsDir = Join-Path $ResultsDir $ScenarioName
 
@@ -221,8 +234,8 @@ New-Item -ItemType Directory -Force -Path $scenarioResultsDir | Out-Null
 $workingDir = Copy-ScenarioToTemp -ScenarioSourceDir $scenarioSourceDir -ScenarioName $ScenarioName -RunType $RunType
 
 # Step 2: Configure plugin state
-$pluginName = "msbuild-skills"
-$pluginPath = Join-Path $RepoRoot "msbuild-skills"
+$pluginName = $PluginName
+$pluginPath = $PluginPath
 
 if ($RunType -eq "vanilla") {
     Write-Host ""

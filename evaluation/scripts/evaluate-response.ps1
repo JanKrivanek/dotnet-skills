@@ -27,6 +27,9 @@ param(
     [Parameter(Mandatory)]
     [string]$ResultsDir,
 
+    [Parameter(Mandatory)]
+    [string]$ScenariosBaseDir,
+
 [int]$TimeoutSeconds = 300,
 
     [string]$RepoRoot
@@ -183,7 +186,7 @@ Write-Host ("=" * 60)
 $scenarioResultsDir = Join-Path $ResultsDir $ScenarioName
 
 # Read expected output from scenario folder
-$scenarioBaseDir = Join-Path $RepoRoot "evaluation\scenarios\$ScenarioName"
+$scenarioBaseDir = Join-Path $ScenariosBaseDir $ScenarioName
 $expectedFile = Join-Path $scenarioBaseDir "expected-output.md"
 if (-not (Test-Path $expectedFile)) {
     throw "Expected output file not found: $expectedFile"

@@ -1,0 +1,1 @@
+Generate comprehensive unit tests for the MathService class in the Calculator project. Put the tests in the existing Calculator.Tests project.
