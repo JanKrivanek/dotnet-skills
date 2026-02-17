@@ -1,14 +1,15 @@
-name: Copilot Skills Evaluation
+name: Eval - unittest
 
 on:
   pull_request:
     paths:
-      - 'msbuild-skills/**'
-      - 'evaluation/**'
-      - '.github/workflows/copilot-skills-evaluation.yml'
+      - 'unittest/**'
+      - 'evaluation/scenarios/unittest/**'
+      - 'evaluation/scripts/**'
+      - '.github/workflows/eval-unittest.yml'
 
   schedule:
-    - cron: '0 6 * * *'  # Daily at 6 AM UTC
+    - cron: '0 7 * * *'  # Daily at 7 AM UTC (offset from msbuild eval)
 
   workflow_dispatch:
     inputs:
@@ -78,7 +79,7 @@ jobs:
             $scenarios = $inputScenarios -split ',' | ForEach-Object { $_.Trim() }
           }
           else {
-            $scenarios = Get-ChildItem -Path "evaluation/scenarios" -Directory |
+            $scenarios = Get-ChildItem -Path "evaluation/scenarios/unittest" -Directory |
               Where-Object { Test-Path (Join-Path $_.FullName "scenario") } |
               Select-Object -ExpandProperty Name
           }
@@ -92,15 +93,15 @@ jobs:
         run: |
           # Ensure no custom plugins are installed (ignore error if not installed)
           $ErrorActionPreference = "SilentlyContinue"
-          copilot plugin uninstall msbuild-skills 2>$null
+          copilot plugin uninstall unittest 2>$null
           $ErrorActionPreference = "Stop"
 
           # Validate plugin state
           $pluginList = copilot plugin list 2>&1 | Out-String
-          if ($pluginList -match "msbuild-skills") {
-            throw "❌ VALIDATION FAILED: msbuild-skills should NOT be installed for vanilla run"
+          if ($pluginList -match "unittest") {
+            throw "❌ VALIDATION FAILED: unittest should NOT be installed for vanilla run"
           }
-          Write-Host "✅ Validated: No msbuild-skills plugin installed"
+          Write-Host "✅ Validated: No unittest plugin installed"
 
           # Run each scenario
           $scenarios = $env:SCENARIOS -split ","
@@ -109,21 +110,24 @@ jobs:
             pwsh -File ./evaluation/scripts/run-scenario.ps1 `
               -ScenarioName $scenario `
               -RunType "vanilla" `
-              -ResultsDir "evaluation/results/$env:RUN_ID"
+              -ResultsDir "evaluation/results/$env:RUN_ID" `
+              -PluginName "unittest" `
+              -PluginPath "${{ github.workspace }}/unittest" `
+              -ScenariosBaseDir "evaluation/scenarios/unittest"
           }
         shell: pwsh
 
       - name: Install Plugin and Run Skilled Copilot
         run: |
           # Install the plugin from local source
-          copilot plugin install "${{ github.workspace }}/msbuild-skills"
+          copilot plugin install "${{ github.workspace }}/unittest"
 
           # Validate plugin is installed
           $pluginList = copilot plugin list 2>&1 | Out-String
-          if ($pluginList -notmatch "msbuild-skills") {
-            throw "❌ VALIDATION FAILED: msbuild-skills should be installed for skilled run"
+          if ($pluginList -notmatch "unittest") {
+            throw "❌ VALIDATION FAILED: unittest should be installed for skilled run"
           }
-          Write-Host "✅ Validated: msbuild-skills plugin is installed"
+          Write-Host "✅ Validated: unittest plugin is installed"
 
           # Run each scenario
           $scenarios = $env:SCENARIOS -split ","
@@ -132,7 +136,10 @@ jobs:
             pwsh -File ./evaluation/scripts/run-scenario.ps1 `
               -ScenarioName $scenario `
               -RunType "skilled" `
-              -ResultsDir "evaluation/results/$env:RUN_ID"
+              -ResultsDir "evaluation/results/$env:RUN_ID" `
+              -PluginName "unittest" `
+              -PluginPath "${{ github.workspace }}/unittest" `
+              -ScenariosBaseDir "evaluation/scenarios/unittest"
           }
         shell: pwsh
 
@@ -140,15 +147,15 @@ jobs:
         run: |
           # Uninstall plugin for clean evaluation (ignore error if not installed)
           $ErrorActionPreference = "SilentlyContinue"
-          copilot plugin uninstall msbuild-skills 2>$null
+          copilot plugin uninstall unittest 2>$null
           $ErrorActionPreference = "Stop"
 
           # Validate plugin is removed
           $pluginList = copilot plugin list 2>&1 | Out-String
-          if ($pluginList -match "msbuild-skills") {
-            throw "❌ VALIDATION FAILED: msbuild-skills should NOT be installed for evaluation"
+          if ($pluginList -match "unittest") {
+            throw "❌ VALIDATION FAILED: unittest should NOT be installed for evaluation"
           }
-          Write-Host "✅ Validated: No msbuild-skills plugin installed for evaluation"
+          Write-Host "✅ Validated: No unittest plugin installed for evaluation"
 
           # Evaluate each scenario
           $scenarios = $env:SCENARIOS -split ","
@@ -156,7 +163,8 @@ jobs:
             Write-Host "`n=== Evaluating: $scenario ==="
             pwsh -File ./evaluation/scripts/evaluate-response.ps1 `
               -ScenarioName $scenario `
-              -ResultsDir "evaluation/results/$env:RUN_ID"
+              -ResultsDir "evaluation/results/$env:RUN_ID" `
+              -ScenariosBaseDir "evaluation/scenarios/unittest"
           }
         shell: pwsh
 
@@ -165,7 +173,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: evaluation-results-${{ env.RUN_ID }}
+          name: eval-unittest-${{ env.RUN_ID }}
           path: evaluation/results/${{ env.RUN_ID }}/
           retention-days: 30
 
@@ -174,6 +182,7 @@ jobs:
         run: |
           pwsh -File ./evaluation/scripts/generate-summary.ps1 `
             -ResultsDir "evaluation/results/$env:RUN_ID" `
+            -PluginName "unittest" `
             -GitHubRunUrl "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" `
             -ArtifactsUrl "${{ steps.upload-artifacts.outputs.artifact-url }}"
 

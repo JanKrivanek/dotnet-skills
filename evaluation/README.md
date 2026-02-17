@@ -1,6 +1,11 @@
 # Copilot Skills Evaluation
 
-Automated pipeline for measuring whether [msbuild-skills](../msbuild-skills/) improve Copilot's responses to MSBuild-related problems.
+Automated pipeline for measuring whether Copilot skill plugins improve responses. Currently supports:
+
+| Plugin | Workflow | Scenarios |
+|--------|----------|-----------|
+| [msbuild-skills](../msbuild-skills/) | `eval-msbuild.yml` | MSBuild diagnosis scenarios |
+| [unittest](../unittest/) | `eval-unittest.yml` | Unit test generation scenarios |
 
 ## How It Works
 
@@ -9,7 +14,7 @@ Each scenario is run **twice** through Copilot CLI:
 | Run | Plugins | Purpose |
 |-----|---------|---------|
 | **Vanilla** | None | Baseline — what Copilot produces on its own |
-| **Skilled** | `msbuild-skills` installed | What Copilot produces with the skills plugin |
+| **Skilled** | Plugin installed | What Copilot produces with the skills plugin |
 
 Both outputs are then scored by a separate Copilot invocation (acting as an evaluator) against an expected-output rubric, producing per-scenario quality scores (Accuracy, Completeness, Actionability, Clarity — each 1–5) along with token and time metrics.
 
@@ -17,37 +22,49 @@ Both outputs are then scored by a separate Copilot invocation (acting as an eval
 
 ```
 evaluation/
-├── scenarios/                    # One folder per test scenario
-│   └── <scenario-name>/
-│       ├── expected-output.md    # Rubric the evaluator scores against
-│       └── scenario/             # Test project files (copied to temp dir at runtime)
-│           └── <scenario files>
-├── scripts/                      # Pipeline scripts (PowerShell 7+)
-│   ├── run-scenario.ps1          # Copies scenario to temp dir, runs Copilot CLI
-│   ├── evaluate-response.ps1     # Scores vanilla & skilled outputs against expected-output.md
-│   ├── parse-copilot-stats.ps1   # Extracts token/time/model stats from Copilot output
-│   └── generate-summary.ps1      # Produces the final markdown summary table
-├── results/                      # Run outputs (git-ignored in CI, kept locally)
+├── scenarios/
+│   ├── msbuild/                  # msbuild-skills scenarios
+│   │   ├── bin-obj-clash/
+│   │   └── generated-file-include/
+│   └── unittest/                 # unittest scenarios
+│       ├── calculator-xunit/
+│       └── order-service-mstest/
+├── scripts/                      # Shared pipeline scripts (parameterized)
+│   ├── run-scenario.ps1          # -PluginName, -PluginPath, -ScenariosBaseDir
+│   ├── evaluate-response.ps1     # -ScenariosBaseDir
+│   ├── parse-copilot-stats.ps1   # Plugin-agnostic
+│   └── generate-summary.ps1      # -PluginName (optional)
+├── results/                      # Run outputs (git-ignored in CI)
 │   └── <run-id>/
 │       ├── summary.md
 │       └── <scenario-name>/
-│           └── <scenario outputs>
 └── README.md                     # This file
 ```
 
 ### Adding a New Scenario
 
-1. Create `evaluation/scenarios/<name>/scenario/` with the project files that exhibit the build problem.
-2. Create `evaluation/scenarios/<name>/expected-output.md` describing the expected diagnosis, key concepts, and fixes.
-3. The pipeline will auto-discover any folder under `scenarios/` that contains a `scenario/` subfolder.
+1. Create `evaluation/scenarios/<plugin>/<name>/scenario/` with the project files.
+2. Create `evaluation/scenarios/<plugin>/<name>/expected-output.md` describing the expected diagnosis/output.
+3. Add a `prompt.txt` inside the `scenario/` folder with the prompt to send to Copilot.
+4. The pipeline will auto-discover any folder under `scenarios/<plugin>/` that contains a `scenario/` subfolder.
 
 > **Note:** Only the `scenario/` subfolder is copied to a temp directory for each run, keeping the repository checkout clean. The `expected-output.md` stays in place and is read directly during evaluation.
 
+### Script Parameters
+
+All scripts are parameterized to work with any plugin:
+
+| Script | Key Parameters |
+|--------|---------------|
+| `run-scenario.ps1` | `-PluginName`, `-PluginPath`, `-ScenariosBaseDir` |
+| `evaluate-response.ps1` | `-ScenariosBaseDir` |
+| `generate-summary.ps1` | `-PluginName` (optional, for summary header) |
+
 ## Pipeline Steps
 
-1. **Discover scenarios** — finds all `evaluation/scenarios/*/scenario/` directories.
-2. **Vanilla run** — uninstalls the skills plugin, runs each scenario through Copilot CLI.
-3. **Skilled run** — installs `msbuild-skills` plugin, runs each scenario again.
+1. **Discover scenarios** — finds all `evaluation/scenarios/<plugin>/*/scenario/` directories.
+2. **Vanilla run** — uninstalls the plugin, runs each scenario through Copilot CLI.
+3. **Skilled run** — installs the plugin, runs each scenario again.
 4. **Evaluate** — uninstalls the plugin, then uses Copilot CLI (as a neutral evaluator) to score both outputs against `expected-output.md`.
 5. **Generate summary** — aggregates scores and stats into a markdown table.
 
@@ -92,28 +109,43 @@ evaluation/
    COPILOT_GITHUB_TOKEN=ghp_your_token_here
    ```
 
-### Run the Pipeline
+### Run the Pipelines
 
 From the repository root, in **PowerShell**:
 
+**MSBuild evaluation:**
 ```powershell
 $ErrorActionPreference = "Continue"
 & act workflow_dispatch `
+    -W .github/workflows/eval-msbuild.yml `
     --pull=false `
     -P ubuntu-latest=act-pwsh:latest `
     --use-new-action-cache `
     --secret-file .secrets `
     --bind `
     --artifact-server-path "$PWD/.act-artifacts" `
-    --env "GITHUB_RUN_ID=local-run" `
+    --env "GITHUB_RUN_ID=local-msbuild" `
     --env "GITHUB_RUN_ATTEMPT=1" `
-    2>&1 | Tee-Object -FilePath act-eval.log
+    2>&1 | Tee-Object -FilePath act-eval-msbuild.log
 ```
 
-Results will appear in `evaluation/results/local-run-1/summary.md`.
-Uploaded artifacts are stored in `.act-artifacts/` (git-ignored).
+**Unittest evaluation:**
+```powershell
+$ErrorActionPreference = "Continue"
+& act workflow_dispatch `
+    -W .github/workflows/eval-unittest.yml `
+    --pull=false `
+    -P ubuntu-latest=act-pwsh:latest `
+    --use-new-action-cache `
+    --secret-file .secrets `
+    --bind `
+    --artifact-server-path "$PWD/.act-artifacts" `
+    --env "GITHUB_RUN_ID=local-unittest" `
+    --env "GITHUB_RUN_ATTEMPT=1" `
+    2>&1 | Tee-Object -FilePath act-eval-unittest.log
+```
 
-> **⚠️ Windows + act caveat:** You must invoke `act` directly from PowerShell with `2>&1 | Tee-Object` (or `2>&1 | Out-Host`). Using `cmd /c act ... > file 2>&1` causes `context canceled` errors that kill long-running Docker exec steps. This is a known issue with act v0.2.x on Windows.
+Results will appear in `evaluation/results/<run-id>/summary.md`.
 
 ### Understanding the Output
 
@@ -126,4 +158,4 @@ The summary table shows per-scenario comparisons:
 | **Tokens (in)** | Input token delta (negative = skilled used fewer tokens) |
 | **Winner** | Which run produced the better result |
 
-If the `Upload Artifacts` step fails with `Unable to get the ACTIONS_RUNTIME_TOKEN env variable`, ensure you are passing `--artifact-server-path` to act (see the command above). This flag starts a local artifact server; without it, the required runtime variables are not set.
+> **⚠️ Windows + act caveat:** You must invoke `act` directly from PowerShell with `2>&1 | Tee-Object` (or `2>&1 | Out-Host`). Using `cmd /c act ... > file 2>&1` causes `context canceled` errors that kill long-running Docker exec steps. This is a known issue with act v0.2.x on Windows.

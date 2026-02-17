@@ -21,6 +21,9 @@ param(
     [string]$ResultsDir,
 
     [Parameter()]
+    [string]$PluginName,
+
+    [Parameter()]
     [string]$GitHubRunUrl,
 
     [Parameter()]
@@ -139,7 +142,8 @@ if (-not $scenarioDirs) {
 $summaryLines = New-Object System.Collections.Generic.List[string]
 
 # Header
-$summaryLines.Add("## Copilot Skills Evaluation Results")
+$pluginLabel = if ($PluginName) { " — $PluginName" } else { "" }
+$summaryLines.Add("## Copilot Skills Evaluation Results$pluginLabel")
 $summaryLines.Add("")
 $summaryLines.Add("**Run Date**: $(Get-Date -Format 'yyyy-MM-dd HH:mm UTC')")
 $summaryLines.Add("**Scenarios Tested**: $($scenarioDirs.Count)")
